@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!--
+    Política de seguridad: el navegador SOLO permite conexiones al mismo sitio (los archivos
+    de la propia aplicación). Cualquier intento de enviar datos a otro servidor queda bloqueado.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#F6F8FC">
+  <title>MegaFlow · Mega Suministros</title>
+  <link rel="icon" type="image/png" href="assets/favicon.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="js/boot.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <div id="boot-error" class="boot-error" role="alert" hidden>
+    <strong>MegaFlow no pudo iniciarse.</strong>
+    <span data-detail>Recarga la página con Ctrl+Shift+R (Windows) o Cmd+Shift+R (Mac).</span>
+  </div>
+  <noscript><div class="boot-error">MegaFlow necesita JavaScript activado en el navegador.</div></noscript>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="./" aria-label="MegaFlow — inicio">
+        <img class="logo logo-light" src="assets/logo-mega-light.png" alt="Mega Suministros" width="145" height="40">
+        <img class="logo logo-dark" src="assets/logo-mega-dark.png" alt="Mega Suministros" width="145" height="40">
+        <span class="brand-sep" aria-hidden="true"></span>
+        <span class="brand-text"><strong>MegaFlow</strong><small>Automatización documental</small></span>
+      </a>
+      <div class="top-actions">
+        <span class="local-badge" title="Los documentos se procesan únicamente en este navegador. No se envían a ningún servidor.">
+          <i data-icon="shield-check" data-size="16"></i><span>Procesamiento local</span>
+        </span>
+        <button id="theme-toggle" class="theme-switch" type="button" role="switch" aria-checked="false" aria-label="Modo oscuro">
+          <span class="theme-track"><span class="theme-knob"><i data-icon="sun" data-size="14" class="ico-sun"></i><i data-icon="moon" data-size="14" class="ico-moon"></i></span></span>
+        </button>
+        <button id="help-btn" class="icon-btn" type="button" aria-label="Ayuda e información" title="Ayuda">
+          <i data-icon="circle-help" data-size="20"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="tabs" role="tablist" aria-label="Procesos">
+      <button class="tab is-active" id="tab-invoices" type="button" role="tab" aria-selected="true" aria-controls="panel-invoices">
+        <span class="tab-icon"><i data-icon="file-spreadsheet" data-size="22"></i></span>
+        <span class="tab-text"><strong>Preparar facturas</strong><small>PDF de pedidos → Excel Odoo + Excel de control</small></span>
+      </button>
+      <button class="tab" id="tab-dossiers" type="button" role="tab" aria-selected="false" aria-controls="panel-dossiers" tabindex="-1">
+        <span class="tab-icon"><i data-icon="file-stack" data-size="22"></i></span>
+        <span class="tab-text"><strong>Armar expedientes</strong><small>Órdenes + facturas + prevalidaciones → PDF final</small></span>
+      </button>
+    </div>
+
+    <!-- ===================================================== PROCESO 1 -->
+    <section id="panel-invoices" class="panel" role="tabpanel" aria-labelledby="tab-invoices">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h1>Preparar facturas</h1>
+            <p>Convierte órdenes de Coral en archivos listos para Odoo y control administrativo.</p>
+          </div>
+          <span class="chip"><i data-icon="receipt" data-size="14"></i> Odoo 19.3 · Borradores</span>
+        </div>
+
+        <div class="section-label"><span class="step">1</span> Órdenes de compra Coral <span id="count-p1-orders" class="counter"></span></div>
+        <div class="dropzone dropzone-lg" id="dz-p1-orders" tabindex="0" role="button" aria-label="Área de carga de órdenes Coral. Arrastra archivos PDF o pulsa para seleccionarlos.">
+          <input type="file" id="in-p1-orders" class="visually-hidden" accept=".pdf,application/pdf" multiple tabindex="-1" aria-hidden="true">
+          <div class="dz-idle">
+            <span class="dz-icon"><i data-icon="cloud-upload" data-size="30"></i></span>
+            <strong>Arrastra aquí tus órdenes Coral</strong>
+            <span class="dz-hint">Puedes cargar un archivo con múltiples pedidos o varios documentos individuales</span>
+            <button type="button" class="btn btn-secondary" data-pick><i data-icon="upload" data-size="16"></i> Seleccionar PDF</button>
+          </div>
+          <div class="dz-over" aria-hidden="true"><i data-icon="download" data-size="28"></i><span>Suelta tus archivos aquí</span></div>
+        </div>
+        <div class="files" id="files-p1-orders" aria-live="polite"></div>
+
+        <div class="section-label"><span class="step">2</span> Configuración de facturación</div>
+        <div class="settings">
+          <div class="grid-fields">
+            <label class="field span-2">Cliente
+              <input id="p1-customer" type="text" autocomplete="off" required>
+            </label>
+            <label class="field">Fecha de factura
+              <input id="p1-invoice-date" type="date" required>
+            </label>
+            <label class="field">Condición de pago
+              <select id="p1-due-mode"></select>
+            </label>
+            <label class="field">Fecha de vencimiento
+              <input id="p1-due-date" type="date" required>
+              <small id="p1-due-hint" class="field-hint"></small>
+            </label>
+            <label class="field">Diario
+              <input id="p1-journal" type="text" autocomplete="off" required>
+            </label>
+            <label class="field">IVA
+              <input id="p1-iva-view" type="text" readonly tabindex="-1">
+            </label>
+            <label class="field">Cuenta de ingresos
+              <input id="p1-account" type="text" autocomplete="off" required>
+            </label>
+          </div>
+          <details class="advanced">
+            <summary><i data-icon="sliders-horizontal" data-size="16"></i> Parámetros técnicos de Odoo</summary>
+            <div class="grid-fields">
+              <label class="field">ID del impuesto (Database ID)
+                <input id="p1-tax-id" type="number" min="1" step="1" required>
+                <small class="field-hint">IVA 15% (411, B). Columna <code>Invoice Lines/Taxes/Database ID</code>.</small>
+              </label>
+              <label class="field">Porcentaje de IVA
+                <input id="p1-iva" type="number" min="0" max="100" step="1" required>
+              </label>
+              <label class="field span-2">Plazo de pago en Odoo (opcional)
+                <input id="p1-payment-terms" type="text" autocomplete="off" placeholder="Vacío: Odoo usa la fecha de vencimiento">
+              </label>
+            </div>
+            <p class="field-hint">Valores predeterminados en <code>js/config.js</code>. No uses el nombre del impuesto: Odoo interpreta la coma como separador.</p>
+          </details>
+        </div>
+
+        <div class="actions">
+          <button id="p1-run" class="btn btn-primary btn-lg" type="button"><i data-icon="scan-search" data-size="18"></i><span>Analizar pedidos</span></button>
+          <button id="p1-reset" class="btn btn-ghost" type="button"><i data-icon="rotate-ccw" data-size="16"></i><span>Reiniciar</span></button>
+        </div>
+        <div id="p1-progress" class="progress" hidden></div>
+        <div id="p1-results" class="results" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ===================================================== PROCESO 2 -->
+    <section id="panel-dossiers" class="panel" role="tabpanel" aria-labelledby="tab-dossiers" hidden>
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h1>Armar expedientes PDF</h1>
+            <p>Relaciona automáticamente órdenes, facturas y prevalidaciones para generar expedientes completos.</p>
+          </div>
+          <span class="chip"><i data-icon="file-stack" data-size="14"></i> 4 páginas A5 por pedido</span>
+        </div>
+
+        <div class="upload-grid">
+          <div class="upload-card">
+            <div class="upload-card-head"><span class="uc-icon"><i data-icon="file-text" data-size="20"></i></span><div><strong>1. Órdenes de compra</strong><span id="count-p2-orders" class="counter"></span></div></div>
+            <div class="dropzone" id="dz-p2-orders" tabindex="0" role="button" aria-label="Área de carga de órdenes de compra">
+              <input type="file" id="in-p2-orders" class="visually-hidden" accept=".pdf,application/pdf" multiple tabindex="-1" aria-hidden="true">
+              <div class="dz-idle">
+                <span class="dz-icon"><i data-icon="cloud-upload" data-size="24"></i></span>
+                <strong>Arrastra las órdenes</strong>
+                <span class="dz-hint">Uno o varios PDF</span>
+                <button type="button" class="btn btn-secondary btn-sm" data-pick><i data-icon="upload" data-size="15"></i> Seleccionar archivos</button>
+              </div>
+              <div class="dz-over" aria-hidden="true"><i data-icon="download" data-size="24"></i><span>Suelta tus archivos aquí</span></div>
+            </div>
+            <button type="button" id="p2-reuse-orders" class="btn-link" hidden><i data-icon="copy" data-size="14"></i> Usar las órdenes cargadas en "Preparar facturas"</button>
+            <div class="files" id="files-p2-orders" aria-live="polite"></div>
+          </div>
+
+          <div class="upload-card">
+            <div class="upload-card-head"><span class="uc-icon"><i data-icon="receipt" data-size="20"></i></span><div><strong>2. Facturas</strong><span id="count-p2-invoices" class="counter"></span></div></div>
+            <div class="dropzone" id="dz-p2-invoices" tabindex="0" role="button" aria-label="Área de carga de facturas">
+              <input type="file" id="in-p2-invoices" class="visually-hidden" accept=".pdf,application/pdf" multiple tabindex="-1" aria-hidden="true">
+              <div class="dz-idle">
+                <span class="dz-icon"><i data-icon="cloud-upload" data-size="24"></i></span>
+                <strong>Arrastra las facturas</strong>
+                <span class="dz-hint">Un PDF consolidado o PDF individuales</span>
+                <button type="button" class="btn btn-secondary btn-sm" data-pick><i data-icon="upload" data-size="15"></i> Seleccionar archivos</button>
+              </div>
+              <div class="dz-over" aria-hidden="true"><i data-icon="download" data-size="24"></i><span>Suelta tus archivos aquí</span></div>
+            </div>
+            <div class="files" id="files-p2-invoices" aria-live="polite"></div>
+          </div>
+
+          <div class="upload-card">
+            <div class="upload-card-head"><span class="uc-icon"><i data-icon="badge-check" data-size="20"></i></span><div><strong>3. Prevalidaciones</strong><span id="count-p2-prevals" class="counter"></span></div></div>
+            <div class="dropzone" id="dz-p2-prevals" tabindex="0" role="button" aria-label="Área de carga de prevalidaciones">
+              <input type="file" id="in-p2-prevals" class="visually-hidden" accept=".pdf,application/pdf" multiple tabindex="-1" aria-hidden="true">
+              <div class="dz-idle">
+                <span class="dz-icon"><i data-icon="cloud-upload" data-size="24"></i></span>
+                <strong>Arrastra las prevalidaciones</strong>
+                <span class="dz-hint">Con su código QR, uno o varios PDF</span>
+                <button type="button" class="btn btn-secondary btn-sm" data-pick><i data-icon="upload" data-size="15"></i> Seleccionar archivos</button>
+              </div>
+              <div class="dz-over" aria-hidden="true"><i data-icon="download" data-size="24"></i><span>Suelta tus archivos aquí</span></div>
+            </div>
+            <div class="files" id="files-p2-prevals" aria-live="polite"></div>
+          </div>
+        </div>
+
+        <div class="settings settings-inline">
+          <label class="field">Orden final de los expedientes
+            <select id="p2-sort">
+              <option value="orders">Orden original de los pedidos</option>
+              <option value="sap">Orden por SAP</option>
+              <option value="invoice">Orden por número de factura</option>
+            </select>
+          </label>
+          <div class="field">Tamaño de página
+            <span class="static-value"><i data-icon="file-text" data-size="16"></i> A5 vertical · 148 × 210 mm</span>
+          </div>
+          <div class="flow">
+            <span><b>1</b> Factura original</span><span><b>2</b> Copia de factura</span><span><b>3</b> Orden de compra</span><span><b>4</b> Prevalidación</span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="p2-run" class="btn btn-primary btn-lg" type="button"><i data-icon="link-2" data-size="18"></i><span>Analizar y relacionar documentos</span></button>
+          <button id="p2-reset" class="btn btn-ghost" type="button"><i data-icon="rotate-ccw" data-size="16"></i><span>Reiniciar</span></button>
+        </div>
+        <div id="p2-progress" class="progress" hidden></div>
+        <div id="p2-results" class="results" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span>MegaFlow <span id="app-version"></span> · Mega Suministros SAS · Herramienta interna</span>
+      <span class="footer-right">
+        <span class="muted">Sin servidor · Sin cuentas · Sin almacenamiento de documentos</span>
+        <button id="diag-btn" type="button" class="btn-link"><i data-icon="bug" data-size="14"></i> Diagnóstico</button>
+      </span>
+    </div>
+  </footer>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <dialog id="help-dialog" class="dialog" aria-labelledby="help-title">
+    <div class="dialog-head"><h2 id="help-title">Cómo usar MegaFlow</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar"><i data-icon="x" data-size="18"></i></button></div>
+    <div class="dialog-body prose">
+      <h3>1. Preparar facturas</h3>
+      <ol>
+        <li>Arrastra el PDF de órdenes Coral (o pulsa <em>Seleccionar PDF</em>). Puedes cargar un PDF con todas las órdenes, varios PDF individuales o agregarlos por partes.</li>
+        <li>Revisa la fecha de factura, la condición de pago y el vencimiento.</li>
+        <li>Pulsa <em>Analizar pedidos</em>. Si todo es correcto, descarga el <strong>Excel Odoo</strong> y el <strong>Excel de control</strong>.</li>
+        <li>En Odoo: Contabilidad → Clientes → Facturas → ⚙ Importar registros → carga el Excel → <em>Probar</em> → <em>Importar</em>. Las facturas quedan en borrador.</li>
+      </ol>
+      <h3>2. Armar expedientes</h3>
+      <ol>
+        <li>Carga órdenes, facturas y prevalidaciones en sus tres áreas (en cualquier orden y cantidad de archivos).</li>
+        <li>Pulsa <em>Analizar y relacionar documentos</em>. La prevalidación une cada pedido (PEDIDO) con su factura (REFERENCIA).</li>
+        <li>Si la tabla no muestra errores, pulsa <em>Generar PDF final</em> y luego <em>Descargar PDF completo</em>.</li>
+      </ol>
+      <h3>Privacidad</h3>
+      <p>Los documentos se leen únicamente en la memoria de este navegador. No se envían a GitHub ni a ningún servidor, y no se guardan: al cerrar o recargar la página desaparecen. La página aplica una política de seguridad que bloquea conexiones a otros sitios. Solo se guarda tu preferencia de tema claro/oscuro.</p>
+      <h3>Problemas frecuentes</h3>
+      <ul>
+        <li><strong>"Parece escaneado":</strong> el PDF es una imagen sin texto. Usa el PDF digital original.</li>
+        <li><strong>"Parece una factura, no una orden":</strong> el archivo está en el área equivocada.</li>
+        <li><strong>"Producto desconocido" o "precio diferente":</strong> revisa la orden o actualiza el catálogo en <code>js/config.js</code>.</li>
+        <li>Si algo no responde, abre <em>Diagnóstico</em> (pie de página) y copia el detalle para soporte.</li>
+      </ul>
+    </div>
+  </dialog>
+
+  <dialog id="diag-dialog" class="dialog dialog-wide" aria-labelledby="diag-title">
+    <div class="dialog-head"><h2 id="diag-title">Diagnóstico técnico</h2><button type="button" class="icon-btn" data-close aria-label="Cerrar"><i data-icon="x" data-size="18"></i></button></div>
+    <div class="dialog-body">
+      <p class="muted small">Información para soporte. No incluye el contenido de los documentos.</p>
+      <pre class="diag-pre"></pre>
+    </div>
+    <div class="dialog-foot"><button id="diag-copy" type="button" class="btn btn-secondary"><i data-icon="copy" data-size="16"></i> Copiar diagnóstico</button><button type="button" class="btn btn-ghost" data-close>Cerrar</button></div>
+  </dialog>
+</body>
+</html>

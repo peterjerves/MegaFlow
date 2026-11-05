@@ -1,0 +1,20 @@
+{
+  "name": "megaflow",
+  "version": "3.1.0",
+  "private": true,
+  "description": "MegaFlow — Mega Suministros SAS. Aplicación estática (GitHub Pages). Este archivo solo se usa para ejecutar las pruebas automáticas; la aplicación NO necesita Node.js.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"tests/unit/*.test.mjs\"",
+    "test:e2e": "node tests/e2e.mjs",
+    "test:synthetic": "node tests/make-synthetic.mjs tests/fixtures && node tests/e2e.mjs --data tests/fixtures",
+    "test:perf": "node tests/perf.mjs 100",
+    "serve": "node tests/static-server.mjs 8080 /megaflow/"
+  },
+  "devDependencies": {
+    "exceljs": "4.4.0",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.4.299",
+    "playwright": "^1.50.0"
+  }
+}

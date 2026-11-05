@@ -7,6 +7,8 @@
  *   node tests/e2e.mjs --data <carpeta>     (contiene ordenes.pdf, facturas.pdf, prevalidaciones.pdf)
  *   node tests/e2e.mjs --orders a.pdf --invoices b.pdf --prevals c.pdf
  *   Opciones: --expect 28  (cantidad de pedidos esperada)  --report RESULTADOS.md
+ *             --safari          emula la falta de `for await` sobre ReadableStream (como Safari)
+ *             --safari legacy   además quita APIs recientes que Safari antiguo no tiene
  *
  * Los documentos reales NO deben subirse al repositorio: pásalos desde una carpeta local.
  */
@@ -19,6 +21,7 @@ import { chromium } from 'playwright';
 import ExcelJS from 'exceljs';
 import { startServer } from './static-server.mjs';
 import { prepareInputs } from './lib/prepare.mjs';
+import { emulateSafari } from './lib/safari-emulation.mjs';
 import { pagesFromFile, pagesFromBytes } from './lib/node-pdf.mjs';
 import { parseInvoice, looksLikeInvoice } from '../js/invoice-parser.js';
 import { parsePrevalidation, looksLikePrevalidation } from '../js/prevalidation-parser.js';
@@ -58,6 +61,8 @@ const preBySap = new Map(truthPrevals.map((p) => [p.sap, p]));
 const srv = await startServer({ base: '/megaflow/' });
 const browser = await chromium.launch();
 const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1360, height: 900 }, locale: 'es-EC' });
+const safariMode = args.safari ? (args.safari === 'legacy' ? 'legacy' : 'streams') : null;
+if (safariMode) await emulateSafari(context, safariMode);
 const page = await context.newPage();
 const consoleErrors = [];
 const cspViolations = [];
@@ -125,6 +130,7 @@ try {
   await page.goto(srv.url);
   await page.waitForFunction(() => window.__megaflowReady === true, null, { timeout: 10000 });
   check('Arranque', 'La app inicia en un servidor HTTP estático con subruta /megaflow/', true, srv.url);
+  if (safariMode) check('Arranque', `Emulación de Safari activa (${safariMode === 'legacy' ? 'sin iteración de streams ni APIs recientes' : 'sin iteración de ReadableStream'})`, await page.evaluate(() => !!window.__safariEmulation));
   check('Arranque', 'Sin librerías externas al cargar (PDF.js, pdf-lib y ExcelJS se cargan bajo demanda desde vendor/)', !netRequests.some((r) => !r.url.startsWith(srv.url)));
 
   // ================================================================ PRUEBA 2: TEMA
@@ -537,7 +543,7 @@ const skipped = results.filter((r) => r.ok === null).length;
 const md = [
   `# Resultados de pruebas E2E — MegaFlow ${CONFIG.app.version}`,
   '',
-  `Fecha: ${new Date().toISOString()} · Navegador: Chromium (Playwright) · Servidor estático con subruta /megaflow/`,
+  `Fecha: ${new Date().toISOString()} · Navegador: Chromium (Playwright)${safariMode ? ` con emulación de Safari (${safariMode})` : ''} · Servidor estático con subruta /megaflow/`,
   `Datos: ${N} órdenes (${path.basename(SRC.orders)}, ${path.basename(SRC.invoices)}, ${path.basename(SRC.prevals)})`,
   '',
   `**${passed} correctas · ${failed} fallidas · ${skipped} no ejecutadas**`,

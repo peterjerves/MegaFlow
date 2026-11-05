@@ -56,11 +56,31 @@ export async function openPdf(pdfjs, data, options = {}) {
 }
 
 /**
+ * Lee el texto de una página con un lector de stream explícito (reader.read()).
+ * Así no depende de `for await` sobre ReadableStream, que Safari no soporta.
+ */
+export async function readTextContent(pdfPage, params) {
+  if (typeof pdfPage.streamTextContent !== 'function') return pdfPage.getTextContent(params);
+  const reader = pdfPage.streamTextContent(params).getReader();
+  const items = [];
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      for (const it of value.items) items.push(it);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return { items };
+}
+
+/**
  * Extrae el modelo de una página PDF.js.
  */
 export async function extractPageModel(pdfjs, pdfPage, meta = {}) {
   const viewport = pdfPage.getViewport({ scale: 1 });
-  const content = await pdfPage.getTextContent({ includeMarkedContent: false, disableNormalization: false });
+  const content = await readTextContent(pdfPage, { includeMarkedContent: false, disableNormalization: false });
   const items = [];
   for (const it of content.items) {
     if (typeof it.str !== 'string' || !it.str.trim()) continue;

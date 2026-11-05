@@ -1,6 +1,6 @@
 {
   "name": "megaflow",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "private": true,
   "description": "MegaFlow — Mega Suministros SAS. Aplicación estática (GitHub Pages). Este archivo solo se usa para ejecutar las pruebas automáticas; la aplicación NO necesita Node.js.",
   "type": "module",

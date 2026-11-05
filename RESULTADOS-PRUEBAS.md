@@ -1,33 +1,34 @@
-# Resultados de las pruebas — MegaFlow 3.1.0
+# Resultados de las pruebas — MegaFlow 3.2.0
 
-Fecha de ejecución: 4 de noviembre de 2026. Entorno: Linux, Node.js 22, **Chromium 153** (Playwright 1.63) contra un servidor HTTP estático que publica la app en la subruta `/megaflow/` (equivalente a GitHub Pages). No se abrió con `file://`.
+Fecha de ejecución: 5 de noviembre de 2026. Entorno: Linux, Node.js 22, **Chromium 153** (Playwright 1.63) contra un servidor HTTP estático que publica la app en la subruta `/megaflow/` (equivalente a GitHub Pages).
 
-## Cambios verificados en la v3.1
+## Corrección de la v3.2: error en Safari
 
-- Expediente por pedido: **1) factura, 2) copia de la factura, 3) orden de compra, 4) prevalidación**, comprobado página por página en los 28 expedientes reales.
-- **Reducción A4 → A5 como al imprimir:** se midió la posición del texto de la factura original frente al PDF generado: factor único 0,7051 en ancho y en alto, desvío 0 pt (sin deformar, sin recortar).
-- Las diferencias informativas (productos, clave de acceso, catálogo, tabla de orden ilegible) ya no bloquean el expediente; la revisión del PDF generado ya no bloquea la descarga.
-- El proyecto tiene 74 archivos (antes 256): se puede subir por la web de GitHub en una sola vez.
+- Error reportado en Safari con la v3.1: *“Error inesperado al leer el PDF: undefined is not a function (near '...t of e...')”*.
+- Causa: PDF.js 6 lee el texto de cada página con `for await (const t of e)` sobre un `ReadableStream`; Safari no implementa esa forma de recorrer streams.
+- Reproducción: con la v3.1 y la emulación de Safari (`--safari`), Chromium da el mismo fallo (“e is not async iterable”) al cargar las órdenes.
+- Solución: el texto se lee con `reader.read()` (sin `for await`) y `js/compat.js` agrega la iteración de streams y `Promise.withResolvers` cuando faltan, en la página y en el worker de PDF.js (`js/pdf-worker.js`).
+- Verificación: la suite completa pasa en Chromium normal, con emulación de Safari y con emulación de Safari 16.4.
 
 ## Resumen
 
 | Prueba | Resultado |
 |---|---|
-| Unitarias (`npm test`) | **41/41 correctas** |
-| E2E en navegador con el **lote real del 30/10/2026** (28 órdenes, 28 facturas, 28 prevalidaciones) | **84/84 correctas** |
-| E2E en navegador con documentos **sintéticos** (6 pedidos) | **82/84 correctas**, 2 no ejecutadas (los sintéticos no tienen QR/código de barras reales) |
-| Rendimiento 50 pedidos (200 páginas) | PDF generado y revisado en 2.5 s |
-| Rendimiento 100 pedidos (400 páginas) | PDF generado y revisado en 4.5 s; 2 Excel en 0.4 s |
+| Unitarias (`npm test`) | **45/45 correctas** |
+| E2E, lote real 30/10/2026, Chromium normal | **84/84 correctas** |
+| E2E, lote real, **emulación de Safari** (sin iteración de ReadableStream) | **85/85 correctas** |
+| E2E, lote real, **emulación de Safari 16.4** (además sin Promise.withResolvers, URL.parse, Iterator, Base64 de Uint8Array, Float16Array, Response.bytes…) | **85/85 correctas** |
+| E2E, documentos sintéticos, emulación de Safari | **83/85 correctas**, 2 no ejecutadas (los sintéticos no tienen QR/código de barras reales) |
+| Rendimiento 100 pedidos (400 páginas) | PDF generado y revisado en 4.6 s; 2 Excel en 0.9 s |
 
-## Resultados con el lote real del 30 de octubre de 2026
+## Lote real del 30 de octubre de 2026 (emulación de Safari)
 
-Los documentos reales se usaron solo de forma local y **no** forman parte del proyecto. Por privacidad se omite la columna de detalle (contenía códigos SAP, OC y números de factura).
-
-Datos clave: 28 órdenes → 28 facturas independientes en el Excel Odoo; base USD 1.015,80; IVA estimado USD 152,47; total USD 1.168,27; 28/28 coincidencias; PDF de 112 páginas A5. El Excel Odoo coincide con las 28 facturas ya emitidas en Odoo (referencia independiente).
+Documentos reales usados solo localmente; no forman parte del proyecto. Se omite la columna de detalle por privacidad.
 
 | Grupo | Comprobación | Resultado |
 |---|---|---|
 | Arranque | La app inicia en un servidor HTTP estático con subruta /megaflow/ | OK |
+| Arranque | Emulación de Safari activa (sin iteración de ReadableStream) | OK |
 | Arranque | Sin librerías externas al cargar (PDF.js, pdf-lib y ExcelJS se cargan bajo demanda desde vendor/) | OK |
 | Tema | Cambia a oscuro (fondo #11151D, tarjetas #1B2230, texto claro) | OK |
 | Tema | Logo con texto blanco en oscuro y logo original en claro | OK |
@@ -112,13 +113,14 @@ Datos clave: 28 órdenes → 28 facturas independientes en el Excel Odoo; base U
 | Privacidad | Política CSP activa sin violaciones (connect-src self) | OK |
 | Estabilidad | Sin errores de JavaScript en la consola | OK |
 
-## Resultados con documentos sintéticos (reproducibles por cualquiera)
+## Documentos sintéticos (emulación de Safari, reproducibles por cualquiera)
 
-Generados con `node tests/make-synthetic.mjs tests/fixtures`. Datos ficticios con la misma estructura que los reales.
+Generados con `node tests/make-synthetic.mjs tests/fixtures` y ejecutados con `node tests/e2e.mjs --data tests/fixtures --safari`.
 
 | Grupo | Comprobación | Resultado | Detalle |
 |---|---|---|---|
-| Arranque | La app inicia en un servidor HTTP estático con subruta /megaflow/ | OK | http://127.0.0.1:46761/megaflow/ |
+| Arranque | La app inicia en un servidor HTTP estático con subruta /megaflow/ | OK | http://127.0.0.1:44163/megaflow/ |
+| Arranque | Emulación de Safari activa (sin iteración de ReadableStream) | OK |  |
 | Arranque | Sin librerías externas al cargar (PDF.js, pdf-lib y ExcelJS se cargan bajo demanda desde vendor/) | OK |  |
 | Tema | Cambia a oscuro (fondo #11151D, tarjetas #1B2230, texto claro) | OK | {"theme":"dark","bg":"rgb(17, 21, 29)","card":"rgb(27, 34, 48)","text":"rgb(248, 250, 252)","logoDark":"block","logoLight":"none","aria":"true","stored":"dark"} |
 | Tema | Logo con texto blanco en oscuro y logo original en claro | OK |  |
@@ -132,7 +134,7 @@ Generados con `node tests/make-synthetic.mjs tests/fixtures`. Datos ficticios co
 | Carga | Agregar nuevamente el mismo archivo después de eliminarlo | OK |  |
 | Carga | Accesible con teclado: Enter sobre el área abre el explorador | OK |  |
 | Carga | Detecta el mismo contenido con otro nombre (huella SHA-256) | OK | ordenes.pdf |
-| Carga | Arrastrar: resalta el área y muestra "Suelta tus archivos aquí" | OK | {"cls":true,"visible":true,"text":"Suelta tus archivos aquí","border":"oklab(0.593408 -0.0282239 -0.16341)"} |
+| Carga | Arrastrar: resalta el área y muestra "Suelta tus archivos aquí" | OK | {"cls":true,"visible":true,"text":"Suelta tus archivos aquí","border":"oklab(0.593463 -0.0282294 -0.163442)"} |
 | Carga | Arrastrar: el evento drop se gestiona (preventDefault) y se quita el resaltado | OK |  |
 | Errores | Archivo que no es PDF → error comprensible | OK | No es un archivo PDF. Solo se aceptan documentos .pdf. |
 | Errores | Archivo vacío → error | OK | El archivo está vacío (0 bytes). |
@@ -198,13 +200,17 @@ Generados con `node tests/make-synthetic.mjs tests/fixtures`. Datos ficticios co
 | Botones | Reiniciar limpia las tres áreas del proceso 2 | OK |  |
 | Botones | Ayuda y Diagnóstico abren y cierran | OK |  |
 | Privacidad | Ninguna solicitud a otros dominios durante todas las pruebas | OK |  |
-| Privacidad | El servidor solo recibió GET de archivos de la app (ningún envío de documentos) | OK | 156 solicitudes GET |
+| Privacidad | El servidor solo recibió GET de archivos de la app (ningún envío de documentos) | OK | 220 solicitudes GET |
 | Privacidad | Sin documentos en localStorage, sessionStorage, IndexedDB ni cookies (solo el tema) | OK | {"local":["megaflow-theme"],"session":[],"cookies":"","idb":[]} |
 | Privacidad | Política CSP activa sin violaciones (connect-src self) | OK |  |
 | Estabilidad | Sin errores de JavaScript en la consola | OK |  |
 
 ## Pruebas unitarias
 
+- ✔ ReadableStream se puede recorrer con for await (como lo usa PDF.js 6)
+- ✔ Salir antes de tiempo cancela el stream y libera el lector
+- ✔ Los errores del stream se propagan
+- ✔ Promise.withResolvers
 - ✔ Odoo: una factura por orden, misma tienda no se agrupa, nota final line_note
 - ✔ Odoo: la validación detecta display_type vacío, líneas huérfanas y notas con precio
 - ✔ Odoo: XLSX con columnas exactas, celdas vacías reales y 2 facturas
@@ -249,8 +255,7 @@ Generados con `node tests/make-synthetic.mjs tests/fixtures`. Datos ficticios co
 
 ## Lo que NO se pudo probar aquí (declarado explícitamente)
 
-- **Publicación real en GitHub Pages**: se probó en un servidor estático equivalente con subruta `/megaflow/`, no en `github.io`.
-- **Safari, Edge y Firefox**: no disponibles en este entorno; solo se probó Chromium (mismo motor que Chrome y Edge).
-- **Arrastre físico desde Finder/Explorador**: se probó disparando los eventos reales `dragenter`/`dragover`/`drop` con objetos `File` en el navegador.
-- **Importación en tu Odoo 19.3**: el archivo usa las columnas y valores que indicaste como probados. Usa **Probar** antes de **Importar**.
-- **Microsoft Excel**: el Excel de control se verificó con ExcelJS y recalculando con LibreOffice; no se abrió en Microsoft Excel.
+- **Safari real**: no se pudo instalar WebKit en este entorno (descarga bloqueada). Se usó la emulación descrita, que reproduce el error original.
+- **Publicación real en GitHub Pages**: se probó en un servidor estático equivalente con subruta `/megaflow/`.
+- **Edge y Firefox instalados**: no disponibles; Edge usa el mismo motor que Chromium.
+- **Importación en tu Odoo 19.3** y apertura en **Microsoft Excel**.

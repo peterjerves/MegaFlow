@@ -14,11 +14,16 @@ Funciona por completo **dentro del navegador**: no tiene servidor, no tiene base
 
 Los dos procesos son independientes: no hace falta ejecutar el 1 para usar el 2.
 
+### Novedades de la versión 3.2
+
+- **Corregido el error en Safari** *“Error inesperado al leer el PDF: undefined is not a function (near '...t of e...')”*. PDF.js 6 recorre los datos con una función que Safari no tiene (`for await` sobre `ReadableStream`). MegaFlow ahora lee el texto con un método compatible y agrega esa función cuando falta (`js/compat.js`), en la página y en el lector de PDF. También agrega `Promise.withResolvers` para Safari anteriores a la 17.4.
+- Comprueba la versión en el pie de página: debe decir **v3.2.0**.
+
 ### Novedades de la versión 3.1
 
 - **Expedientes = imprimir A4 en A5.** Por cada pedido: 1) factura, 2) copia de la factura, 3) orden de compra, 4) prevalidación. Cada página A4 se reduce a A5 exactamente como al imprimir con *Ajustar a la página* (misma proporción, ocupa la hoja completa), sin convertirla en imagen.
 - **Menos bloqueos en el proceso 2.** Solo detienen la generación los problemas de emparejamiento (falta un documento, duplicados, ambigüedad, SAP/OC distintos o totales distintos). Las diferencias de productos, la clave de acceso, el catálogo o una orden cuya tabla no se pudo leer se muestran como **observaciones** y no impiden armar el PDF. La revisión automática del PDF generado ya no bloquea la descarga: solo informa.
-- **Menos de 100 archivos** (74): se puede subir todo a GitHub por la web en un solo paso.
+- **Menos de 100 archivos**: se puede subir todo a GitHub por la web en un solo paso.
 
 **Cómo se relacionan los documentos (proceso 2).** Nunca por posición de página ni por importes iguales.
 La **prevalidación** es el documento puente: su campo `PEDIDO` es el SAP de la orden y su campo `REFERENCIA` es el número de factura.
@@ -31,7 +36,7 @@ Después se comprueba que la factura indique el mismo SAP y OC, que el subtotal 
 1. Entra a <https://github.com> e inicia sesión.
 2. Pulsa **New repository** (botón verde). Nombre sugerido: `megaflow`. Pulsa **Create repository**.
 3. En el repositorio nuevo, pulsa **uploading an existing file** (o **Add file → Upload files**).
-4. Descomprime el ZIP en tu computador. Abre la carpeta `megaflow` y **arrastra todo su contenido** (son 74 archivos; la web de GitHub admite hasta 100 por subida) (las carpetas `assets`, `css`, `js`, `vendor`, `tests` y los archivos `index.html`, `README.md`, etc.) a la página de GitHub. Espera a que termine de subir y pulsa **Commit changes**.
+4. Descomprime el ZIP en tu computador. Abre la carpeta `megaflow` y **arrastra todo su contenido** (son 78 archivos; la web de GitHub admite hasta 100 por subida) (las carpetas `assets`, `css`, `js`, `vendor`, `tests` y los archivos `index.html`, `README.md`, etc.) a la página de GitHub. Espera a que termine de subir y pulsa **Commit changes**.
    - Es importante que `index.html` quede en la **raíz** del repositorio (no dentro de otra carpeta).
    - La carpeta `vendor` es obligatoria: contiene las librerías que leen PDF y crean Excel.
 5. Ve a **Settings → Pages**. En **Build and deployment** elige **Deploy from a branch**, rama **main**, carpeta **/ (root)** y pulsa **Save**.
@@ -41,7 +46,7 @@ Después se comprueba que la factura indique el mismo SAP y OC, que el subtotal 
 
 > **Visibilidad:** con un plan gratuito, GitHub Pages requiere que el repositorio sea público. Se publica **solo el código**, nunca tus documentos (que jamás se suben). Si quieres que el código no sea visible, usa un plan de GitHub que permita Pages privados.
 
-**Actualizar la aplicación:** sube los archivos nuevos encima de los anteriores (mismo nombre) y, en el navegador, recarga con **Ctrl + Shift + R** (Windows) o **Cmd + Shift + R** (Mac).
+**Actualizar la aplicación:** sube los archivos nuevos encima de los anteriores (mismo nombre), espera 2–3 minutos a que GitHub publique y recarga sin caché: **Ctrl + Shift + R** en Chrome/Edge (Windows), **Cmd + Shift + R** en Chrome (Mac) o **Cmd + Option + R** en Safari. GitHub Pages puede servir la versión anterior hasta 10 minutos; el pie de página muestra la versión cargada.
 
 **Nunca subas órdenes, facturas ni prevalidaciones al repositorio.** El archivo `.gitignore` bloquea `*.pdf` y `*.xlsx` para quien use Git, pero la subida por la web no lo respeta: simplemente no los arrastres.
 
@@ -152,6 +157,8 @@ index.html                Interfaz (dos pestañas, áreas de carga, diálogos)
 css/styles.css            Estilos, colores y modo oscuro
 js/config.js              ★ Configuración central (Odoo, catálogo, vencimientos, nombres de archivo)
 js/boot.js                Tema inicial y aviso si la app no arranca
+js/compat.js              Compatibilidad con Safari (streams y Promise.withResolvers)
+js/pdf-worker.js          Worker de PDF.js con la compatibilidad aplicada
 js/app.js                 Arranque y conexión de módulos
 js/ui.js                  Avisos, progreso, diagnóstico, tema, pestañas, descargas
 js/icons.js               Íconos Lucide incrustados
@@ -196,14 +203,14 @@ No se usan backend, bases de datos, OCR, APIs externas, Firebase ni Supabase.
 
 ## 9. Navegadores y pruebas
 
-**Probado automáticamente:** Chromium 153 (motor de Chrome y Edge) mediante Playwright, sobre un servidor HTTP estático que publica la app en la subruta `/megaflow/`, igual que GitHub Pages.
+**Probado automáticamente:** Chromium 153 (motor de Chrome y Edge) mediante Playwright, sobre un servidor HTTP estático que publica la app en la subruta `/megaflow/`, igual que GitHub Pages. La suite completa se ejecuta también con **emulación de Safari**: se quitan del navegador las funciones que Safari no tiene (iteración de `ReadableStream`) y, en un segundo modo, también las que faltan en Safari 16.4 (`Promise.withResolvers`, `URL.parse`, `Iterator`, Base64 de `Uint8Array`, etc.). Esa emulación reproduce exactamente el error reportado en la v3.1 y confirma que la v3.2 lo resuelve.
 
-**No probado en este entorno:** Safari, Microsoft Edge y Firefox instalados (no estaban disponibles). El código usa la compilación *legacy* de PDF.js y funciones estándar compatibles con Safari 16.4+, Edge y Chrome actuales, pero recomiendo hacer una prueba rápida en Safari antes de usarlo en producción.
+**No probado en este entorno:** Safari real (WebKit no se pudo instalar aquí), Microsoft Edge y Firefox instalados. Se recomienda confirmar en tu Safari cargando las órdenes una vez.
 
 **Pruebas automáticas incluidas** (ver `tests/README.md` y `RESULTADOS-PRUEBAS.md`):
 
-- `npm test` — 41 pruebas unitarias: números y dinero, IVA, EAN, clave SRI, vencimientos, ciudades recortadas, validaciones, motor de matching (faltantes, duplicados, ambiguos, totales, independencia del orden), Excel Odoo y de control, parsers con documentos sintéticos (incluida robustez ante texto partido o unido), PDF A5 y páginas rotadas.
-- `node tests/e2e.mjs --data <carpeta>` — 84 comprobaciones en navegador real: selector de archivos, arrastrar y soltar, eliminar, reemplazar, duplicados, archivos inválidos, tema, proceso 1 completo con descargas, proceso 2 con documentos desordenados, faltantes, PDF final (orden de las 4 páginas y reducción A4 → A5 como al imprimir), lectura de QR y código de barras, privacidad (red, almacenamiento, CSP).
+- `npm test` — 45 pruebas unitarias: compatibilidad con Safari, números y dinero, IVA, EAN, clave SRI, vencimientos, ciudades recortadas, validaciones, motor de matching (faltantes, duplicados, ambiguos, totales, independencia del orden), Excel Odoo y de control, parsers con documentos sintéticos (incluida robustez ante texto partido o unido), PDF A5 y páginas rotadas.
+- `node tests/e2e.mjs --data <carpeta> [--safari | --safari legacy]` — 84 comprobaciones (85 con emulación de Safari) en navegador real: selector de archivos, arrastrar y soltar, eliminar, reemplazar, duplicados, archivos inválidos, tema, proceso 1 completo con descargas, proceso 2 con documentos desordenados, faltantes, PDF final (orden de las 4 páginas y reducción A4 → A5 como al imprimir), lectura de QR y código de barras, privacidad (red, almacenamiento, CSP).
 - `node tests/perf.mjs 100` — rendimiento con 100 pedidos (400 páginas).
 
 Los documentos reales se usaron para las pruebas **localmente** y **no** se incluyen en el proyecto.

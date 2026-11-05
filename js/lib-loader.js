@@ -3,6 +3,7 @@
  * La interfaz se inicializa sin esperar estas librerías: si alguna falla, los
  * controles de carga siguen funcionando y se muestra un error comprensible.
  */
+import './compat.js'; // compatibilidad con Safari antes de cargar PDF.js
 import { CONFIG } from './config.js';
 
 const cache = new Map();

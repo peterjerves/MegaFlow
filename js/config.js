@@ -13,7 +13,7 @@ export const CONFIG = Object.freeze({
   app: {
     name: 'MegaFlow',
     subtitle: 'Automatización documental',
-    version: '3.1.0',
+    version: '3.2.0',
   },
 
   company: {
@@ -146,7 +146,8 @@ export const CONFIG = Object.freeze({
   /** Rutas relativas (compatibles con GitHub Pages en subcarpeta). */
   vendor: {
     pdfjs: '../vendor/pdfjs/pdf.min.js',
-    pdfjsWorker: '../vendor/pdfjs/pdf.worker.min.js',
+    /** Envoltorio local que añade compatibilidad con Safari y carga vendor/pdfjs/pdf.worker.min.js. */
+    pdfjsWorker: './pdf-worker.js',
     pdfjsStandardFonts: '../vendor/pdfjs/standard_fonts/',
     pdfLib: '../vendor/pdf-lib/pdf-lib.min.js',
     exceljs: '../vendor/exceljs/exceljs.min.js',

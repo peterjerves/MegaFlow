@@ -13,7 +13,7 @@ export const CONFIG = Object.freeze({
   app: {
     name: 'MegaFlow',
     subtitle: 'Automatización documental',
-    version: '3.2.0',
+    version: '3.3.0',
   },
 
   company: {
@@ -115,8 +115,8 @@ export const CONFIG = Object.freeze({
   fileNames: {
     odoo: 'facturas_odoo_coral_{fecha}.xlsx',
     control: 'pedidos_coral_{fecha}.xlsx',
-    /** {dia}_{mes} = 30_octubre */
-    dossier: 'expedientes_coral_{dia}_{mes}_A5.pdf',
+    /** {dia}_{mes} = 30_octubre · {formato} = A4 (2 páginas por hoja) o A5 */
+    dossier: 'expedientes_coral_{dia}_{mes}_{formato}.pdf',
   },
 
   /** Excel de control. */
@@ -127,13 +127,24 @@ export const CONFIG = Object.freeze({
     headerColor: 'FF1E3A5F', // azul oscuro
   },
 
-  /** Expediente PDF. */
+  /**
+   * Expediente PDF. Cada pedido tiene 4 páginas lógicas: factura, copia, orden, prevalidación.
+   * Formatos de salida (medidas en puntos PDF, 1 pt = 1/72 pulgada):
+   *  - 'a4-2up': A4 horizontal (297 × 210 mm) con DOS páginas lado a lado (izquierda | derecha)
+   *              para imprimir en A4 y cortar por la mitad. Hoja 1 = factura | copia,
+   *              hoja 2 = orden | prevalidación.
+   *  - 'a5':     A5 vertical (148 × 210 mm), una página por hoja.
+   */
   dossier: {
-    /** A5 vertical en puntos PDF (148 × 210 mm). */
-    pageWidth: 419.528,
-    pageHeight: 595.276,
     pagesPerOrder: 4,
     defaultSort: 'orders', // 'orders' | 'sap' | 'invoice'
+    defaultLayout: 'a4-2up',
+    /** Línea de corte punteada al centro de cada hoja A4 (se puede desactivar en pantalla). */
+    cutLine: true,
+    layouts: {
+      'a4-2up': { label: 'A4 horizontal · 2 páginas por hoja (para cortar)', sheetWidth: 841.89, sheetHeight: 595.276, slots: 2, fileTag: 'A4' },
+      a5: { label: 'A5 vertical · 1 página por hoja', sheetWidth: 419.528, sheetHeight: 595.276, slots: 1, fileTag: 'A5' },
+    },
   },
 
   limits: {

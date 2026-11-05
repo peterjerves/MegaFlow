@@ -203,12 +203,11 @@
               <option value="invoice">Orden por número de factura</option>
             </select>
           </label>
-          <div class="field">Tamaño de página
-            <span class="static-value"><i data-icon="file-text" data-size="16"></i> A5 vertical · 148 × 210 mm</span>
-          </div>
-          <div class="flow">
-            <span><b>1</b> Factura original</span><span><b>2</b> Copia de factura</span><span><b>3</b> Orden de compra</span><span><b>4</b> Prevalidación</span>
-          </div>
+          <label class="field">Formato de salida
+            <select id="p2-layout"></select>
+          </label>
+          <label class="check check-field" id="p2-cutline-wrap"><input type="checkbox" id="p2-cutline"> Línea de corte al centro</label>
+          <div class="sheet-preview" id="p2-layout-preview" aria-label="Distribución de las páginas en cada hoja"></div>
         </div>
 
         <div class="actions">

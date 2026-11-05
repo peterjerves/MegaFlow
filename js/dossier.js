@@ -46,8 +46,9 @@ export function orderedRows(analysis, mode) {
   return sortRows(analysis.match.rows.filter((r) => r.ok), mode);
 }
 
-export function dossierFileName(orders) {
+export function dossierFileName(orders, layoutId = CONFIG.dossier.defaultLayout) {
+  const formato = (CONFIG.dossier.layouts[layoutId] || CONFIG.dossier.layouts[CONFIG.dossier.defaultLayout]).fileTag;
   const p = dateParts(mostFrequent(orders.map((o) => o.shipDate)));
-  if (!p) return 'expedientes_coral_A5.pdf';
-  return fill(CONFIG.fileNames.dossier, p);
+  if (!p) return `expedientes_coral_${formato}.pdf`;
+  return fill(CONFIG.fileNames.dossier, { ...p, formato });
 }

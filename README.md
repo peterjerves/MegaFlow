@@ -10,14 +10,21 @@ Funciona por completo **dentro del navegador**: no tiene servidor, no tiene base
 | Proceso | Entrada | Salida |
 |---|---|---|
 | **1. Preparar facturas** | PDF de órdenes de compra Coral (uno con muchas páginas, varios individuales o una mezcla) | **Excel de importación para Odoo 19.3** (una factura en borrador por orden, con nota final de tienda/SAP/OC) y **Excel de control PedidosCoral** (una fila por orden, con fórmula) |
-| **2. Armar expedientes** | Órdenes Coral + facturas emitidas + prevalidaciones Coral (en cualquier orden y cantidad de archivos) | **Un PDF A5** con 4 páginas por pedido: factura original, copia idéntica de la factura, orden de compra y prevalidación |
+| **2. Armar expedientes** | Órdenes Coral + facturas emitidas + prevalidaciones Coral (en cualquier orden y cantidad de archivos) | **Un PDF en A4 horizontal** con 2 páginas por hoja, para imprimir y cortar: por pedido, hoja 1 = factura &#124; copia idéntica, hoja 2 = orden de compra &#124; prevalidación (opcional: A5, una página por hoja) |
 
 Los dos procesos son independientes: no hace falta ejecutar el 1 para usar el 2.
+
+### Novedades de la versión 3.3
+
+- **El expediente se exporta en A4 horizontal con dos páginas por hoja** (izquierda y derecha), para imprimir en A4 y cortar por la mitad. Cada pedido ocupa 2 hojas: **hoja 1 = factura | copia**, **hoja 2 = orden de compra | prevalidación**. Con 28 pedidos: 56 hojas A4 (112 páginas).
+- Línea de corte punteada al centro de cada hoja (se puede desactivar con la casilla *Línea de corte al centro*).
+- El formato anterior sigue disponible en *Formato de salida → A5 vertical · 1 página por hoja*.
+- Nombre del archivo: `expedientes_coral_30_octubre_A4.pdf` (o `…_A5.pdf` si eliges A5).
 
 ### Novedades de la versión 3.2
 
 - **Corregido el error en Safari** *“Error inesperado al leer el PDF: undefined is not a function (near '...t of e...')”*. PDF.js 6 recorre los datos con una función que Safari no tiene (`for await` sobre `ReadableStream`). MegaFlow ahora lee el texto con un método compatible y agrega esa función cuando falta (`js/compat.js`), en la página y en el lector de PDF. También agrega `Promise.withResolvers` para Safari anteriores a la 17.4.
-- Comprueba la versión en el pie de página: debe decir **v3.2.0**.
+- Comprueba la versión en el pie de página.
 
 ### Novedades de la versión 3.1
 
@@ -36,7 +43,7 @@ Después se comprueba que la factura indique el mismo SAP y OC, que el subtotal 
 1. Entra a <https://github.com> e inicia sesión.
 2. Pulsa **New repository** (botón verde). Nombre sugerido: `megaflow`. Pulsa **Create repository**.
 3. En el repositorio nuevo, pulsa **uploading an existing file** (o **Add file → Upload files**).
-4. Descomprime el ZIP en tu computador. Abre la carpeta `megaflow` y **arrastra todo su contenido** (son 78 archivos; la web de GitHub admite hasta 100 por subida) (las carpetas `assets`, `css`, `js`, `vendor`, `tests` y los archivos `index.html`, `README.md`, etc.) a la página de GitHub. Espera a que termine de subir y pulsa **Commit changes**.
+4. Descomprime el ZIP en tu computador. Abre la carpeta `megaflow` y **arrastra todo su contenido** (son 79 archivos; la web de GitHub admite hasta 100 por subida) (las carpetas `assets`, `css`, `js`, `vendor`, `tests` y los archivos `index.html`, `README.md`, etc.) a la página de GitHub. Espera a que termine de subir y pulsa **Commit changes**.
    - Es importante que `index.html` quede en la **raíz** del repositorio (no dentro de otra carpeta).
    - La carpeta `vendor` es obligatoria: contiene las librerías que leen PDF y crean Excel.
 5. Ve a **Settings → Pages**. En **Build and deployment** elige **Deploy from a branch**, rama **main**, carpeta **/ (root)** y pulsa **Save**.
@@ -87,11 +94,14 @@ La primera fila de cada factura lleva cliente, fechas, diario y referencia (`OC 
 3. Pulsa **Analizar y relacionar documentos**. Verás pedidos, facturas, prevalidaciones, coincidencias, errores, faltantes y páginas finales, y una tabla con el estado de cada pedido:
    *Correcto · Falta factura · Falta prevalidación · Falta orden · Total diferente · Duplicado · Ambiguo · Datos inconsistentes*.
    Pulsa **›** en una fila para ver los tres documentos relacionados (archivo y página de cada uno) y las comprobaciones. *Ver archivo* te lleva al archivo para reemplazarlo o eliminarlo.
-4. Si el emparejamiento está correcto, pulsa **Generar PDF final** y luego **Descargar PDF completo** (`expedientes_coral_30_octubre_A5.pdf`). MegaFlow comprueba que el PDF tenga 4 páginas A5 por pedido y revisa cada página; si algo no se pudo confirmar, lo muestra como observación, sin impedir la descarga.
+4. Si el emparejamiento está correcto, pulsa **Generar PDF final** y luego **Descargar PDF completo** (`expedientes_coral_30_octubre_A4.pdf`). MegaFlow comprueba la cantidad y el tamaño de las hojas y revisa cada página; si algo no se pudo confirmar, lo muestra como observación, sin impedir la descarga.
    Las **observaciones** (ícono ⓘ en la tabla) son informativas: por ejemplo, productos de la factura distintos a los de la orden o un producto fuera del catálogo. No bloquean el expediente; revísalas si lo consideras necesario.
 5. **Orden final:** por defecto, el de las órdenes cargadas; también por SAP o por número de factura. El emparejamiento no depende del orden elegido.
+6. **Formato de salida:** por defecto *A4 horizontal · 2 páginas por hoja (para cortar)*; la vista previa junto al selector muestra cómo queda cada hoja. También puedes elegir *A5 vertical · 1 página por hoja*. Si cambias el orden, el formato o la línea de corte, pulsa de nuevo *Generar PDF final*.
 
-**Cómo se arma el PDF:** es lo mismo que imprimir cada página A4 en una hoja A5 con *Ajustar a la página*. Las páginas originales se copian tal cual (texto, códigos de barras y QR digitales, sin convertirlas en imagen) y solo se reducen de tamaño. La copia de la factura es exactamente la misma página que la original.
+**Cómo se arma el PDF:** es lo mismo que imprimir con *2 páginas por hoja*: cada página A4 original se reduce proporcionalmente para ocupar media hoja A4 horizontal (148,5 × 210 mm, prácticamente A5) y se centra en su mitad; nada cruza la línea central. Las páginas originales se copian tal cual (texto, códigos de barras y QR digitales, sin convertirlas en imagen). La copia de la factura es exactamente la misma página que la original.
+
+**Cómo imprimir y cortar:** abre el PDF, imprime en papel **A4**, orientación **horizontal**, a **tamaño real / 100 %** (o *Ajustar* si tu impresora recorta los bordes) y a una cara. Corta cada hoja por la línea punteada central: obtendrás dos medias hojas de 148,5 × 210 mm en el orden factura, copia, orden de compra y prevalidación.
 
 ---
 
@@ -209,8 +219,8 @@ No se usan backend, bases de datos, OCR, APIs externas, Firebase ni Supabase.
 
 **Pruebas automáticas incluidas** (ver `tests/README.md` y `RESULTADOS-PRUEBAS.md`):
 
-- `npm test` — 45 pruebas unitarias: compatibilidad con Safari, números y dinero, IVA, EAN, clave SRI, vencimientos, ciudades recortadas, validaciones, motor de matching (faltantes, duplicados, ambiguos, totales, independencia del orden), Excel Odoo y de control, parsers con documentos sintéticos (incluida robustez ante texto partido o unido), PDF A5 y páginas rotadas.
-- `node tests/e2e.mjs --data <carpeta> [--safari | --safari legacy]` — 84 comprobaciones (85 con emulación de Safari) en navegador real: selector de archivos, arrastrar y soltar, eliminar, reemplazar, duplicados, archivos inválidos, tema, proceso 1 completo con descargas, proceso 2 con documentos desordenados, faltantes, PDF final (orden de las 4 páginas y reducción A4 → A5 como al imprimir), lectura de QR y código de barras, privacidad (red, almacenamiento, CSP).
+- `npm test` — 46 pruebas unitarias: compatibilidad con Safari, números y dinero, IVA, EAN, clave SRI, vencimientos, ciudades recortadas, validaciones, motor de matching (faltantes, duplicados, ambiguos, totales, independencia del orden), Excel Odoo y de control, parsers con documentos sintéticos (incluida robustez ante texto partido o unido), PDF A4 horizontal con 2 páginas por hoja y A5, y páginas rotadas.
+- `node tests/e2e.mjs --data <carpeta> [--safari | --safari legacy]` — 88 comprobaciones (89 con emulación de Safari) en navegador real: selector de archivos, arrastrar y soltar, eliminar, reemplazar, duplicados, archivos inválidos, tema, proceso 1 completo con descargas, proceso 2 con documentos desordenados, faltantes, PDF final (hojas A4 horizontales con factura | copia y orden | prevalidación, reducción proporcional, línea de corte, opción A5), lectura de QR y código de barras, privacidad (red, almacenamiento, CSP).
 - `node tests/perf.mjs 100` — rendimiento con 100 pedidos (400 páginas).
 
 Los documentos reales se usaron para las pruebas **localmente** y **no** se incluyen en el proyecto.

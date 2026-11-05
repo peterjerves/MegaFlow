@@ -28,6 +28,7 @@ import { parsePrevalidation, looksLikePrevalidation } from '../js/prevalidation-
 import { looksLikeCoralOrder } from '../js/coral-parser.js';
 import { CONFIG, CATALOG } from '../js/config.js';
 import { compact } from '../js/text-utils.js';
+import { splitSheet } from '../js/pdf-builder.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = Object.fromEntries(process.argv.slice(2).reduce((acc, a, i, arr) => (a.startsWith('--') ? [...acc, [a.slice(2), arr[i + 1] && !arr[i + 1].startsWith('--') ? arr[i + 1] : true]] : acc), []));
@@ -393,8 +394,8 @@ try {
   await page.waitForSelector('#p2-results .stats', { timeout: 60000 });
   await page.screenshot({ path: path.join(work, 'proceso2-matching.png'), fullPage: true });
   const sv = async (l) => statValue('#p2-results', l);
-  const st = { pedidos: await sv('Pedidos'), facturas: await sv('Facturas'), preval: await sv('Prevalidaciones'), coinc: await sv('Coincidencias'), errores: await sv('Errores'), faltantes: await sv('Faltantes'), paginas: await sv('Páginas finales') };
-  check('Matching', `${N} coincidencias, 0 errores, 0 faltantes, ${N * 4} páginas (órdenes, facturas y prevalidaciones desordenadas)`, st.pedidos === String(N) && st.facturas === String(N) && st.preval === String(N) && st.coinc === String(N) && st.errores === '0' && st.faltantes === '0' && st.paginas === String(N * 4), JSON.stringify(st));
+  const st = { pedidos: await sv('Pedidos'), facturas: await sv('Facturas'), preval: await sv('Prevalidaciones'), coinc: await sv('Coincidencias'), errores: await sv('Errores'), faltantes: await sv('Faltantes'), paginas: await sv('Hojas A4') };
+  check('Matching', `${N} coincidencias, 0 errores, 0 faltantes, ${N * 2} hojas A4 (órdenes, facturas y prevalidaciones desordenadas)`, st.pedidos === String(N) && st.facturas === String(N) && st.preval === String(N) && st.coinc === String(N) && st.errores === '0' && st.faltantes === '0' && st.paginas === String(N * 2), JSON.stringify(st));
   const statuses = await page.$$eval('#p2-results .match-table tbody tr:not(.detail-row) .pill', (p) => p.map((x) => x.textContent.trim()));
   check('Matching', 'Todos los registros en estado "Correcto" (sin ambiguos)', statuses.length === N && statuses.every((s) => s === 'Correcto'));
   await page.click('#p2-results .match-table tbody tr:not(.detail-row) [data-act="toggle"]');
@@ -405,15 +406,24 @@ try {
   await page.click('#p2-results [data-act="generate"]');
   await page.waitForSelector('#p2-results [data-act="download"]', { timeout: 120000 });
   const pdfFile = await download('#p2-results [data-act="download"]');
-  check('Descargas', 'Descarga del PDF con nombre expedientes_coral_[dia]_[mes]_A5.pdf', /^expedientes_coral_\d{2}_[a-z]+_A5\.pdf$/.test(path.basename(pdfFile)), path.basename(pdfFile));
-  const verifyPdf = async (file, expectedSapOrder) => {
-    const pages = await pagesFromBytes(fs.readFileSync(file), path.basename(file));
+  check('Descargas', 'Descarga del PDF con nombre expedientes_coral_[dia]_[mes]_A4.pdf', /^expedientes_coral_\d{2}_[a-z]+_A4\.pdf$/.test(path.basename(pdfFile)), path.basename(pdfFile));
+  const verifyPdf = async (file, expectedSapOrder, layoutId = 'a4-2up') => {
+    const layout = CONFIG.dossier.layouts[layoutId];
+    const sheets = await pagesFromBytes(fs.readFileSync(file), path.basename(file));
     const errs = [];
-    if (pages.length !== N * 4) errs.push(`${pages.length} páginas`);
+    if (sheets.length !== (N * 4) / layout.slots) errs.push(`${sheets.length} hojas (esperadas ${(N * 4) / layout.slots})`);
+    for (const sh of sheets) {
+      if (Math.abs(sh.width - layout.sheetWidth) > 1 || Math.abs(sh.height - layout.sheetHeight) > 1) errs.push(`hoja ${sh.pageNumber}: ${sh.width}×${sh.height}`);
+      if (layout.slots > 1) {
+        const mid = sh.width / 2;
+        const crossing = sh.items.filter((it) => it.x < mid - 0.5 && it.x + it.w > mid + 0.5);
+        if (crossing.length) errs.push(`hoja ${sh.pageNumber}: texto que cruza la línea central (${crossing[0].str})`);
+      }
+    }
+    const pages = layout.slots > 1 ? sheets.flatMap((sh) => splitSheet(sh, layout)) : sheets;
     const sapOrder = [];
     for (let k = 0; k < pages.length; k += 4) {
       const [f1, f2, o, p] = pages.slice(k, k + 4);
-      for (const pg of [f1, f2, o, p]) if (Math.abs(pg.width - 419.53) > 1 || Math.abs(pg.height - 595.28) > 1) errs.push(`pág ${pg.pageNumber}: ${pg.width}×${pg.height}`);
       if (!looksLikeInvoice(f1) || !looksLikeInvoice(f2) || !looksLikeCoralOrder(o) || !looksLikePrevalidation(p)) { errs.push(`expediente ${k / 4 + 1}: tipos de página incorrectos`); continue; }
       const i1 = parseInvoice(f1).invoice; const pr = parsePrevalidation(p).prevalidation;
       if (compact(f1.text) !== compact(f2.text)) errs.push(`expediente ${k / 4 + 1}: la copia no es idéntica`);
@@ -422,19 +432,18 @@ try {
       sapOrder.push(i1.sap);
     }
     if (expectedSapOrder && sapOrder.join(',') !== expectedSapOrder.join(',')) errs.push('orden de expedientes distinto al esperado');
-    return { errs, sapOrder, pages: pages.length };
+    return { errs, sapOrder, pages, sheets, layout };
   };
   const ordersShuffledSaps = (await pagesFromFile(inputs.ordersShuffled)).map((p) => compact(p.text).match(/[A-Z]{2}\d{6}/g)).map((m) => m && m.find((s) => invBySap.has(s)));
   const v1 = await verifyPdf(pdfFile, ordersShuffledSaps);
-  check('PDF final', `${N * 4} páginas A5 (148×210 mm), 4 por pedido: factura, copia idéntica, orden y prevalidación correctas`, v1.errs.length === 0, v1.errs.slice(0, 4).join(' · ') || `${v1.pages} páginas`);
+  check('PDF final', `${N * 2} hojas A4 horizontal (297×210 mm) con 2 páginas cada una: hoja 1 = factura | copia idéntica, hoja 2 = orden | prevalidación, en los ${N} pedidos`, v1.errs.length === 0, v1.errs.slice(0, 4).join(' · ') || `${v1.sheets.length} hojas, ${v1.pages.length} páginas`);
   check('PDF final', 'Orden predeterminado = orden de carga de las órdenes de compra', v1.errs.every((e) => !/orden de expedientes/.test(e)));
-  // Reducción tipo impresión: posiciones del texto = posiciones originales × factor único (A4→A5) + centrado
-  const outPages = await pagesFromBytes(fs.readFileSync(pdfFile), 'salida.pdf');
+  // Reducción tipo impresión "2 páginas por hoja": factor único en ancho y alto respecto del original
   const srcInvPages = await pagesFromFile(SRC.invoices);
   const scaleReport = [];
-  for (const [k, role] of [[0, 'factura'], [1, 'copia']]) {
-    const outP = outPages[k];
-    const inv0 = parseInvoice(outPages[0]).invoice;
+  for (const [k, role] of [[0, 'factura (izquierda)'], [1, 'copia (derecha)']]) {
+    const outP = v1.pages[k];
+    const inv0 = parseInvoice(v1.pages[0]).invoice;
     const srcP = srcInvPages.find((p) => parseInvoice(p).invoice?.number === inv0.number);
     const uniq = (pg) => { const m = new Map(); for (const t of pg.tokens) m.set(t.str, m.has(t.str) ? null : t); return m; };
     const a = uniq(srcP); const b = uniq(outP);
@@ -443,18 +452,22 @@ try {
     const fx = fit((t) => t.x); const fy = fit((t) => t.y);
     scaleReport.push({ role, pares: pairs.length, escalaX: +fx.sc.toFixed(4), escalaY: +fy.sc.toFixed(4), desvioMax: +Math.max(fx.res, fy.res).toFixed(2) });
   }
-  const expectedScale = Math.min(419.528 / srcInvPages[0].width, 595.276 / srcInvPages[0].height);
-  check('PDF final', `Cada página A4 reducida a A5 como al imprimir: factor único ${expectedScale.toFixed(4)} en ancho y alto, sin deformar ni recortar`, scaleReport.every((r) => r.pares > 20 && Math.abs(r.escalaX - expectedScale) < 0.002 && Math.abs(r.escalaY - expectedScale) < 0.002 && r.desvioMax < 1), JSON.stringify(scaleReport));
+  const expectedScale = Math.min(841.89 / 2 / srcInvPages[0].width, 595.276 / srcInvPages[0].height);
+  check('PDF final', `Cada página A4 reducida proporcionalmente a media hoja (factor ${expectedScale.toFixed(4)} en ancho y alto), sin deformar ni recortar`, scaleReport.every((r) => r.pares > 20 && Math.abs(r.escalaX - expectedScale) < 0.002 && Math.abs(r.escalaY - expectedScale) < 0.002 && r.desvioMax < 1), JSON.stringify(scaleReport));
   const pdfSize = fs.statSync(pdfFile).size;
   check('PDF final', 'Páginas vectoriales (no imágenes): tamaño razonable', pdfSize < 8 * 1024 * 1024, `${(pdfSize / 1024).toFixed(0)} KB`);
+  const cut = (file) => { try { return JSON.parse(execFileSync('python3', [path.join(HERE, 'lib', 'cutline_check.py'), file, '1'], { encoding: 'utf-8', timeout: 60000 }).trim()); } catch (e) { return { ok: null, skipped: e.message.slice(0, 80) }; } };
+  const cut1 = cut(pdfFile);
+  if (cut1.ok === null) check('PDF final', 'Línea de corte punteada al centro de la hoja', null, cut1.skipped);
+  else check('PDF final', 'Línea de corte punteada al centro de la hoja (activada por defecto)', cut1.coverage > 0.45, `cobertura vertical ${cut1.coverage}`);
 
-  // Legibilidad de códigos: QR de la prevalidación y código de barras de la factura en el PDF final
+  // Legibilidad de códigos: QR de la prevalidación (hoja 2, derecha) y código de barras de la factura (hoja 1)
   const bc = (file, pg, dpi) => { try { return JSON.parse(execFileSync('python3', [path.join(HERE, 'lib', 'barcode_check.py'), file, String(pg), String(dpi)], { encoding: 'utf-8', timeout: 60000 }).trim()); } catch (e) { return { ok: null, skipped: e.message.slice(0, 80) }; } };
   const firstSap = ordersShuffledSaps[0];
   const srcPreIndex = truthPrevals.findIndex((x) => x.sap === firstSap);
-  const qrOut = bc(pdfFile, 4, 200); const qrSrc = bc(SRC.prevals, srcPreIndex + 1, 200);
-  if (qrOut.ok === null || qrSrc.ok === null || !qrSrc.codes.length) check('PDF final', 'QR de la prevalidación legible en A5 (200 dpi)', null, qrOut.skipped || qrSrc.skipped || 'el documento fuente no tiene QR legible');
-  else check('PDF final', 'QR de la prevalidación legible en A5 (200 dpi) e idéntico al original', qrOut.codes.some((c) => qrSrc.codes.some((d) => d.text === c.text)), qrOut.codes.map((c) => c.format).join(','));
+  const qrOut = bc(pdfFile, 2, 200); const qrSrc = bc(SRC.prevals, srcPreIndex + 1, 200);
+  if (qrOut.ok === null || qrSrc.ok === null || !qrSrc.codes.length) check('PDF final', 'QR de la prevalidación legible (200 dpi)', null, qrOut.skipped || qrSrc.skipped || 'el documento fuente no tiene QR legible');
+  else check('PDF final', 'QR de la prevalidación legible (200 dpi) e idéntico al original', qrOut.codes.some((c) => qrSrc.codes.some((d) => d.text === c.text)), qrOut.codes.map((c) => c.format).join(','));
   const barOut = bc(pdfFile, 1, 300);
   const firstInv = invBySap.get(firstSap);
   const barSrc = bc(SRC.invoices, truthInvoices.indexOf(firstInv) + 1, 300);
@@ -462,14 +475,30 @@ try {
   else if (!barSrc.codes.length) check('PDF final', 'Código de barras de la factura legible (300 dpi)', null, 'el documento fuente no tiene un código de barras legible');
   else check('PDF final', 'Código de barras de la factura legible (300 dpi) = clave de acceso', barOut.codes.some((c) => c.text === firstInv.accessKey), barOut.codes.map((c) => c.text).join(','));
 
-  // Orden por número de factura
+  // Orden por número de factura, sin línea de corte
   await page.selectOption('#p2-sort', 'invoice');
+  await page.uncheck('#p2-cutline');
   await page.click('#p2-results [data-act="generate"]');
   await page.waitForSelector('#p2-results [data-act="download"]', { timeout: 120000 });
   const pdfFile2 = await download('#p2-results [data-act="download"]');
   const byInvoice = [...truthInvoices].sort((a, b) => a.number.localeCompare(b.number)).map((i) => i.sap);
   const v2 = await verifyPdf(pdfFile2, byInvoice);
   check('PDF final', 'Opción "orden por número de factura" sin alterar el matching', v2.errs.length === 0, v2.errs.slice(0, 3).join(' · '));
+  const cut2 = cut(pdfFile2);
+  if (cut2.ok === null) check('PDF final', 'Opción para quitar la línea de corte', null, cut2.skipped);
+  else check('PDF final', 'Opción para quitar la línea de corte', cut2.coverage < cut1.coverage - 0.3, `cobertura sin línea ${cut2.coverage} (con línea ${cut1.coverage})`);
+
+  // Formato alternativo: A5 vertical, una página por hoja
+  await page.selectOption('#p2-sort', 'orders');
+  await page.selectOption('#p2-layout', 'a5');
+  check('PDF final', 'Al cambiar el formato se pide generar de nuevo', !(await page.$('#p2-results [data-act="download"]')) && !!(await page.$('#p2-results [data-act="generate"]')));
+  await page.click('#p2-results [data-act="generate"]');
+  await page.waitForSelector('#p2-results [data-act="download"]', { timeout: 120000 });
+  const pdfFile3 = await download('#p2-results [data-act="download"]');
+  const v3 = await verifyPdf(pdfFile3, ordersShuffledSaps, 'a5');
+  check('PDF final', `Formato opcional A5 vertical: ${N * 4} páginas (expedientes_coral_[dia]_[mes]_A5.pdf)`, v3.errs.length === 0 && /_A5\.pdf$/.test(path.basename(pdfFile3)), v3.errs.slice(0, 3).join(' · ') || path.basename(pdfFile3));
+  await page.selectOption('#p2-layout', 'a4-2up');
+  await page.check('#p2-cutline');
 
   // Prueba 8: falta una prevalidación
   await page.click('#files-p2-prevals button[data-action="clear"]');

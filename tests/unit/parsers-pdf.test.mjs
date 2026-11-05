@@ -16,7 +16,7 @@ import { looksLikeInvoice } from '../../js/invoice-parser.js';
 import { looksLikePrevalidation } from '../../js/prevalidation-parser.js';
 import { buildPageModel } from '../../js/pdf-reader.js';
 import { analyzeDossier, orderedRows } from '../../js/dossier.js';
-import { buildDossierPdf, verifyDossier } from '../../js/pdf-builder.js';
+import { buildDossierPdf, verifyDossier, splitSheet } from '../../js/pdf-builder.js';
 import { compact } from '../../js/text-utils.js';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'megaflow-unit-'));
@@ -100,18 +100,43 @@ test('Robustez: el mismo resultado si PDF.js une o divide los fragmentos de text
   else assert.equal(typeof rs.error, 'string');
 });
 
-test('PDF final: 4 páginas A5 por pedido, copia idéntica, verificación posterior', async () => {
+const helpers = { compact, isInvoice: looksLikeInvoice, isOrder: looksLikeCoralOrder, isPreval: looksLikePrevalidation };
+async function buildSynthetic(layout) {
   const docs = (pages, t) => pages.map((p) => classifyAndParse(p, t));
   const a = analyzeDossier({ orderDocs: docs(orderPages, 'order'), invoiceDocs: docs(invoicePages, 'invoice'), preDocs: docs(prePages, 'prevalidation') });
   assert.equal(a.canGenerate, true);
-  const files = { 'ordenes.pdf': 'ordenes.pdf', 'facturas.pdf': 'facturas.pdf', 'prevalidaciones.pdf': 'prevalidaciones.pdf' };
-  const getBytes = async (id) => new Uint8Array(fs.readFileSync(path.join(dir, files[id])));
-  const rows = orderedRows(a, 'orders');
-  const built = await buildDossierPdf(PDFLib, rows, getBytes);
-  assert.equal(built.pageCount, expected.orders.length * 4);
+  const getBytes = async (id) => new Uint8Array(fs.readFileSync(path.join(dir, id)));
+  return buildDossierPdf(PDFLib, orderedRows(a, 'orders'), getBytes, () => {}, { layout });
+}
+
+test('PDF final (predeterminado): A4 horizontal, 2 páginas por hoja — hoja 1 factura | copia, hoja 2 orden | prevalidación', async () => {
+  const built = await buildSynthetic(undefined);
+  const n = expected.orders.length;
+  assert.equal(built.layout.id, 'a4-2up');
+  assert.equal(built.pageCount, n * 4);
+  assert.equal(built.sheetCount, n * 2);
   const out = await pagesFromBytes(built.bytes, 'salida.pdf');
-  const errs = verifyDossier(out, built.plan, { compact, isInvoice: looksLikeInvoice, isOrder: looksLikeCoralOrder, isPreval: looksLikePrevalidation });
-  assert.deepEqual(errs, { blocking: [], warnings: [] });
+  assert.equal(out.length, n * 2);
+  assert.ok(out.every((p) => Math.abs(p.width - 841.89) < 0.5 && Math.abs(p.height - 595.276) < 0.5), 'todas las hojas son A4 horizontal');
+  assert.deepEqual(verifyDossier(out, built.plan, helpers, built.layout).blocking, []);
+  assert.deepEqual(verifyDossier(out, built.plan, helpers, built.layout).warnings, []);
+  for (let k = 0; k < n; k++) {
+    const [f, c] = splitSheet(out[2 * k], built.layout);
+    const [o, v] = splitSheet(out[2 * k + 1], built.layout);
+    assert.ok(looksLikeInvoice(f) && looksLikeInvoice(c) && looksLikeCoralOrder(o) && looksLikePrevalidation(v), `pedido ${k + 1}`);
+    assert.equal(compact(f.text), compact(c.text), 'la copia es idéntica a la factura');
+    assert.ok(compact(f.text).includes(expected.orders[k].invoiceNumber));
+    assert.ok(compact(o.text).includes(expected.orders[k].sap) && compact(v.text).includes(expected.orders[k].sap));
+  }
+  // Cada media hoja contiene solo su página (nada cruza la línea central).
+  assert.ok(built.plan.every((p) => p.rect.width === 841.89 / 2 && p.rect.x === p.slot * (841.89 / 2)));
+});
+
+test('PDF final (opción A5): 4 páginas A5 por pedido', async () => {
+  const built = await buildSynthetic('a5');
+  const out = await pagesFromBytes(built.bytes, 'salida.pdf');
+  assert.equal(out.length, expected.orders.length * 4);
+  assert.deepEqual(verifyDossier(out, built.plan, helpers, built.layout), { blocking: [], warnings: [], virtualPages: out });
   assert.ok(out.every((p) => Math.abs(p.width - 419.528) < 0.5 && Math.abs(p.height - 595.276) < 0.5));
 });
 
@@ -127,10 +152,17 @@ test('PDF final: páginas de origen rotadas se colocan derechas y sin recorte', 
   assert.ok(compact(srcPages[0].text).includes('PAGINAROTADADEPRUEBA12345'), 'en el visor la página original se lee derecha');
   const ref = { fileId: 'r', fileName: 'r.pdf', pageIndex: 0, pageNumber: 1 };
   const fake = [{ sap: 'XX000001', invoice: { page: ref, number: '001-001-000000001' }, order: { page: ref }, preval: { page: ref } }];
-  const built = await buildDossierPdf(PDFLib, fake, async () => bytes);
+  const built = await buildDossierPdf(PDFLib, fake, async () => bytes, () => {}, { layout: 'a5' });
   const out = await pagesFromBytes(built.bytes, 'rot.pdf');
   assert.equal(out.length, 4);
   // El texto se extrae horizontal (las líneas giradas se descartan en el modelo): la página quedó derecha, igual que en el visor.
   assert.ok(compact(out[0].text).includes('PAGINAROTADADEPRUEBA12345'), out[0].text);
   for (const it of out[0].items) assert.ok(it.x >= 0 && it.x <= 419.6 && it.y >= 0 && it.y <= 595.3);
+  // En A4 horizontal (2 por hoja) también queda derecha y dentro de su mitad.
+  const built2 = await buildDossierPdf(PDFLib, fake, async () => bytes);
+  const out2 = await pagesFromBytes(built2.bytes, 'rot2.pdf');
+  assert.equal(out2.length, 2);
+  const [left, right] = splitSheet(out2[0], built2.layout);
+  assert.ok(compact(left.text).includes('PAGINAROTADADEPRUEBA12345') && compact(right.text).includes('PAGINAROTADADEPRUEBA12345'));
+  for (const it of left.items) assert.ok(it.x >= 0 && it.x <= 420.95);
 });

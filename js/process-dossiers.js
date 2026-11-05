@@ -7,7 +7,7 @@ import { CONFIG } from './config.js';
 import { $, escapeHtml, icon, toast, log, Progress, setBusy, downloadBlob, nextFrame } from './ui.js';
 import { whenIdle, isBusy } from './file-manager.js';
 import { analyzeDossier, orderedRows, dossierFileName } from './dossier.js';
-import { buildDossierPdf, verifyDossier, roleLabel } from './pdf-builder.js';
+import { buildDossierPdf, verifyDossier, roleLabel, getLayout, sheetCount } from './pdf-builder.js';
 import { loadPdfLib, loadPdfjs, pdfjsOptions } from './lib-loader.js';
 import { openPdf, readAllPages } from './pdf-reader.js';
 import { looksLikeCoralOrder } from './coral-parser.js';
@@ -23,10 +23,38 @@ export function initDossiersProcess({ orders, invoices, prevals }, p1Zone) {
   const results = $('#p2-results');
   const progress = new Progress($('#p2-progress'));
   const reuseBtn = $('#p2-reuse-orders');
+  const layoutSel = $('#p2-layout');
+  const cutLineChk = $('#p2-cutline');
+  const cutLineWrap = $('#p2-cutline-wrap');
+  const layoutPreview = $('#p2-layout-preview');
   const zones = [orders, invoices, prevals];
   let state = { analysis: null, pdf: null };
 
   sortSel.value = CONFIG.dossier.defaultSort;
+  layoutSel.innerHTML = Object.entries(CONFIG.dossier.layouts).map(([id, l]) => `<option value="${id}">${escapeHtml(l.label)}</option>`).join('');
+  layoutSel.value = CONFIG.dossier.defaultLayout;
+  cutLineChk.checked = CONFIG.dossier.cutLine;
+
+  /** Vista previa de cómo quedan las páginas en cada hoja. */
+  const renderLayoutPreview = () => {
+    const l = getLayout(layoutSel.value);
+    cutLineWrap.hidden = l.slots < 2;
+    const slot = (n, t) => `<div class="sheet-slot"><b>${n}</b>${t}</div>`;
+    const cls = `sheet-paper ${l.slots > 1 ? 'two' : ''} ${cutLineChk.checked ? '' : 'no-cut'}`;
+    layoutPreview.innerHTML = l.slots > 1
+      ? `<div class="sheet"><div class="${cls}">${slot(1, 'Factura')}${slot(2, 'Copia')}</div>Hoja 1 (A4)</div>
+         <div class="sheet"><div class="${cls}">${slot(3, 'Orden de compra')}${slot(4, 'Preva&shy;lidación')}</div>Hoja 2 (A4)</div>`
+      : ['Factura', 'Copia', 'Orden de compra', 'Preva&shy;lidación'].map((t, i) => `<div class="sheet"><div class="sheet-paper">${slot(i + 1, t)}</div>A5</div>`).join('');
+  };
+  renderLayoutPreview();
+  const onOutputOptionChange = () => {
+    renderLayoutPreview();
+    if (!state.analysis) return;
+    if (state.pdf) { state.pdf = null; toast('Cambiaste el formato: genera nuevamente el PDF final.', 'info', 3500); }
+    render();
+  };
+  layoutSel.addEventListener('change', onOutputOptionChange);
+  cutLineChk.addEventListener('change', onOutputOptionChange);
 
   // Reutilizar las órdenes cargadas en "Preparar facturas" (opcional, nunca obligatorio).
   const refreshReuse = () => { reuseBtn.hidden = !(p1Zone.entries.length && !orders.entries.length); };
@@ -138,6 +166,7 @@ export function initDossiersProcess({ orders, invoices, prevals }, p1Zone) {
     runBtn.disabled = true; resetBtn.disabled = true;
     try {
       const rows = orderedRows(a, sortSel.value);
+      const layoutId = layoutSel.value;
       const expected = rows.length * CONFIG.dossier.pagesPerOrder;
       progress.set(5, 0.02, 'Cargando pdf-lib…');
       const PDFLib = await loadPdfLib();
@@ -148,7 +177,7 @@ export function initDossiersProcess({ orders, invoices, prevals }, p1Zone) {
       };
       let built;
       try {
-        built = await buildDossierPdf(PDFLib, rows, getBytes, (done, total) => progress.set(5, 0.05 + 0.6 * (done / total), `Páginas creadas: ${done}/${total}`));
+        built = await buildDossierPdf(PDFLib, rows, getBytes, (done, total) => progress.set(5, 0.05 + 0.6 * (done / total), `Páginas colocadas: ${done}/${total}`), { layout: layoutId, cutLine: cutLineChk.checked });
       } catch (err) {
         log('error', 'Error al generar PDF', err);
         if (/encrypt/i.test(err.message)) throw new UserError('Uno de los PDF tiene restricciones de seguridad (cifrado) y no se puede combinar. Guárdalo de nuevo como PDF sin restricciones y reemplázalo.');
@@ -161,20 +190,21 @@ export function initDossiersProcess({ orders, invoices, prevals }, p1Zone) {
       const { doc, close } = await openPdf(pdfjs, built.bytes.slice(), pdfjsOptions());
       let pages;
       try {
-        pages = await readAllPages(pdfjs, doc, { fileId: 'output', fileName: 'salida.pdf' }, (i, n) => { if (i % 8 === 0) progress.set(5, 0.7 + 0.28 * (i / n), `Verificando página ${i}/${n}`); });
+        pages = await readAllPages(pdfjs, doc, { fileId: 'output', fileName: 'salida.pdf' }, (i, n) => { if (i % 8 === 0) progress.set(5, 0.7 + 0.28 * (i / n), `Revisando hoja ${i}/${n}`); });
       } finally { await close(); }
-      const check = verifyDossier(pages, built.plan, { compact, isInvoice: looksLikeInvoice, isOrder: looksLikeCoralOrder, isPreval: looksLikePrevalidation });
+      const check = verifyDossier(pages, built.plan, { compact, isInvoice: looksLikeInvoice, isOrder: looksLikeCoralOrder, isPreval: looksLikePrevalidation }, built.layout);
       if (built.pageCount !== expected) check.blocking.unshift(`Cantidad de páginas incorrecta: ${built.pageCount} (esperadas ${expected}).`);
       if (check.blocking.length) {
         log('error', 'Verificación del PDF falló', check.blocking.join('\n'));
         throw new UserError(`El PDF generado no tiene la forma esperada: ${check.blocking.slice(0, 5).join(' ')}`);
       }
       if (check.warnings.length) log('warn', 'Observaciones de la verificación del PDF', check.warnings.join('\n'));
-      const name = dossierFileName(a.orders);
-      state.pdf = { blob: new Blob([built.bytes], { type: 'application/pdf' }), name, pages: built.pageCount, plan: built.plan, warnings: check.warnings };
-      progress.set(6, 1, `PDF listo: ${built.pageCount} páginas A5 (${rows.length} expedientes × 4).`);
+      const name = dossierFileName(a.orders, layoutId);
+      state.pdf = { blob: new Blob([built.bytes], { type: 'application/pdf' }), name, pages: built.pageCount, sheets: built.sheetCount, layout: built.layout, plan: built.plan, warnings: check.warnings };
+      const summaryText = describeOutput(built.layout, built.sheetCount, built.pageCount);
+      progress.set(6, 1, `PDF listo: ${summaryText} (${rows.length} expedientes).`);
       render();
-      toast(`PDF generado: ${built.pageCount} páginas A5 (${rows.length} expedientes).`, 'ok');
+      toast(`PDF generado: ${summaryText}.`, 'ok');
     } catch (err) {
       const msg = err instanceof UserError ? err.message : `Error inesperado: ${err.message || err}`;
       if (!(err instanceof UserError)) log('error', 'Generación de PDF', err);
@@ -195,10 +225,11 @@ export function initDossiersProcess({ orders, invoices, prevals }, p1Zone) {
     const stats = [
       ['Pedidos', s.orders, 'file-text'], ['Facturas', s.invoices, 'receipt'], ['Prevalidaciones', s.prevals, 'badge-check'],
       ['Coincidencias', s.matched, 'link-2'], ['Errores', errorsTotal, 'triangle-alert'], ['Faltantes', s.missing, 'file-x'],
-      ['Páginas finales', a.canGenerate ? s.pages : 0, 'file-stack'],
+      [getLayout(layoutSel.value).slots > 1 ? 'Hojas A4' : 'Páginas A5', a.canGenerate ? sheetCount(s.matched, layoutSel.value) : 0, 'file-stack'],
     ];
+    const outText = describeOutput(getLayout(layoutSel.value), sheetCount(s.matched, layoutSel.value), s.pages);
     const banner = a.canGenerate
-      ? `<div class="notice notice-ok">${icon('circle-check', { size: 20 })}<div><strong>Matching validado.</strong> ${s.matched} pedidos relacionados 1 a 1 por identificadores (prevalidación → factura). ${s.pages} páginas A5 finales.</div></div>`
+      ? `<div class="notice notice-ok">${icon('circle-check', { size: 20 })}<div><strong>Matching validado.</strong> ${s.matched} pedidos relacionados 1 a 1 por identificadores (prevalidación → factura). PDF final: ${outText}.</div></div>`
       : `<div class="notice notice-error">${icon('circle-x', { size: 20 })}<div><strong>Generación bloqueada.</strong> Corrige o reemplaza los archivos indicados y vuelve a analizar. No se genera un PDF incompleto.${s.countMismatch ? ` ${escapeHtml(s.countMismatch)}` : ''}</div></div>`;
     const pageIssues = a.pageIssues.length
       ? `<div class="issues"><h3>${icon('triangle-alert', { size: 18 })} Páginas no reconocidas (${a.pageIssues.length})</h3><ul>${a.pageIssues.map((p) => `<li>${escapeHtml(p.message)} <button type="button" class="btn-link" data-act="goto" data-file="${escapeHtml(p.page.fileId)}">Ver archivo</button></li>`).join('')}</ul></div>` : '';
@@ -219,12 +250,12 @@ export function initDossiersProcess({ orders, invoices, prevals }, p1Zone) {
     const pdfBlock = state.pdf
       ? `<div class="downloads">
           <button type="button" class="btn btn-primary btn-lg" data-act="download">${icon('download', { size: 18 })} Descargar PDF completo</button>
-          <p class="hint">${escapeHtml(state.pdf.name)} · ${state.pdf.pages} páginas A5 vertical · cada página A4 reducida a A5 como al imprimir (factura, copia, orden, prevalidación).</p>
+          <p class="hint">${escapeHtml(state.pdf.name)} · ${describeOutput(state.pdf.layout, state.pdf.sheets, state.pdf.pages)}. ${state.pdf.layout.slots > 1 ? 'Por pedido: hoja 1 = factura | copia, hoja 2 = orden de compra | prevalidación. Imprime en A4 horizontal a tamaño real y corta por la línea central.' : 'Por pedido: factura, copia, orden de compra y prevalidación.'}</p>
           ${state.pdf.warnings.length ? `<details class="issues warn"><summary>${icon('info', { size: 16 })} Observaciones de la revisión automática (${state.pdf.warnings.length})</summary><ul>${state.pdf.warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join('')}</ul></details>` : ''}
         </div>`
       : `<div class="downloads">
           <button type="button" class="btn btn-primary btn-lg" data-act="generate" ${a.canGenerate ? '' : 'disabled'}>${icon('file-stack', { size: 18 })} Generar PDF final</button>
-          <p class="hint">${a.canGenerate ? `Se crearán ${s.pages} páginas A5: por cada pedido, 1) factura, 2) copia de la factura, 3) orden de compra, 4) prevalidación. Cada página A4 se reduce a A5 como al imprimir.` : 'Disponible cuando todos los documentos estén relacionados correctamente.'}</p>
+          <p class="hint">${a.canGenerate ? `Se creará: ${outText}. Por cada pedido: 1) factura, 2) copia de la factura, 3) orden de compra, 4) prevalidación${getLayout(layoutSel.value).slots > 1 ? ' (hoja 1 = 1 | 2, hoja 2 = 3 | 4)' : ''}.` : 'Disponible cuando todos los documentos estén relacionados correctamente.'}</p>
         </div>`;
     results.innerHTML = `${banner}
       <div class="stats stats-7">${stats.map(([l, v, ic]) => `<div class="stat"><span class="stat-ico">${icon(ic, { size: 18 })}</span><div><div class="stat-label">${l}</div><div class="stat-value">${v}</div></div></div>`).join('')}</div>
@@ -238,6 +269,13 @@ export function initDossiersProcess({ orders, invoices, prevals }, p1Zone) {
 }
 
 class UserError extends Error {}
+
+/** "56 hojas A4 horizontal (112 páginas, 2 por hoja)" o "112 páginas A5 vertical". */
+function describeOutput(layout, sheets, pages) {
+  return layout.slots > 1
+    ? `${sheets} hojas A4 horizontal (${pages} páginas, ${layout.slots} por hoja)`
+    : `${pages} páginas A5 vertical`;
+}
 
 function docCard(title, ic, ref, fields, ok) {
   if (!ref) return `<div class="doc-card missing">${icon(ic, { size: 16 })}<div><strong>${title}</strong><span class="muted">No encontrado</span></div></div>`;
